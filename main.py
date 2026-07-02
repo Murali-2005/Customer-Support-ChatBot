@@ -1,4 +1,6 @@
+from update_knowledge import update_vector_db
 import streamlit as st
+import os
 from langchain_helper import create_vector_db, get_qa_chain
 
 st.set_page_config(
@@ -7,12 +9,31 @@ st.set_page_config(
 )
 
 st.title("🤖 Customer Service Chatbot")
+VECTOR_DB_PATH = "faiss_index"
 
-if st.button("Create Knowledge Base"):
-    with st.spinner("Creating Vector Database..."):
-        create_vector_db()
-    st.success("Knowledge Base Created Successfully!")
+# Show Create button only if FAISS doesn't exist
+if not os.path.exists(VECTOR_DB_PATH):
 
+    if st.button("Create Knowledge Base"):
+
+        with st.spinner("Creating Knowledge Base..."):
+
+            create_vector_db()
+
+        st.success("Knowledge Base Created!")
+
+else:
+
+    st.success("Knowledge Base Ready")
+
+    if st.button("Update Knowledge Base"):
+
+        with st.spinner("Updating Knowledge Base..."):
+
+            message = update_vector_db()
+
+        st.success(message)
+  
 question = st.text_input("Ask your question:")
 
 if question:
