@@ -16,6 +16,9 @@ faiss_index/
 # Streamlit
 .streamlit/
 
+# Dynamic folders
+processed/
+
 # VS Code
 .vscode/
 

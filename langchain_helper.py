@@ -3,37 +3,47 @@ from dotenv import load_dotenv
 
 from langchain_community.document_loaders import CSVLoader
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
 
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY not found in .env file")
+    raise ValueError("GOOGLE_API_KEY not found.")
 
 VECTOR_DB_PATH = "faiss_index"
 
-# Gemini LLM
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     google_api_key=GOOGLE_API_KEY,
-    temperature=0.1,
+    temperature=0.1
 )
 
-# Embedding model
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
+# -----------------------------
+# Conversation Memory
+# -----------------------------
+
+import streamlit as st
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# -----------------------------
+# Create Initial Vector DB
+# -----------------------------
+
 
 def create_vector_db():
+
     loader = CSVLoader(
         file_path="dataset.csv",
         source_column="prompt"
@@ -48,15 +58,15 @@ def create_vector_db():
 
     vectordb.save_local(VECTOR_DB_PATH)
 
-    print("✅ Vector Database Created Successfully")
+    print("Knowledge Base Created")
 
 
-def get_qa_chain():
+# -----------------------------
+# Load Retriever
+# -----------------------------
 
-    if not os.path.exists(VECTOR_DB_PATH):
-        raise FileNotFoundError(
-            "Vector database not found. Click 'Create Knowledge Base' first."
-        )
+
+def get_retriever():
 
     vectordb = FAISS.load_local(
         VECTOR_DB_PATH,
@@ -64,40 +74,103 @@ def get_qa_chain():
         allow_dangerous_deserialization=True
     )
 
-    retriever = vectordb.as_retriever(
-        search_kwargs={"k": 3}
+    return vectordb.as_retriever(
+        search_kwargs={"k":3}
     )
 
+
+# -----------------------------
+# MultiModal Reasoning
+# -----------------------------
+
+
+def get_multimodal_response(question, image_context=""):
+
+    retriever = get_retriever()
+
+    docs = retriever.invoke(question)
+
+    retrieved_context = "\n\n".join(
+        [doc.page_content for doc in docs]
+    )
+
+    history = get_history()
+
     prompt = ChatPromptTemplate.from_template(
-        """
-You are a helpful customer service chatbot.
+"""
+You are an intelligent AI Customer Support Assistant.
 
-Use ONLY the provided context to answer the user's question.
+You have FOUR information sources:
 
-If the answer cannot be found in the context, reply exactly:
+1. Retrieved Knowledge Base
+2. Image Analysis
+3. Previous Conversation
+4. Current User Question
 
-I don't know.
+Rules:
 
-Context:
+• Always answer using the retrieved knowledge first.
+
+• Use image analysis only if it is relevant.
+
+• Use previous conversation if necessary.
+
+• If image and retrieved knowledge disagree,
+say so.
+
+• If information is missing,
+reply:
+
+'I don't know based on the available evidence.'
+
+Retrieved Knowledge:
 {context}
 
-Question:
-{input}
+Image Analysis:
+{image_context}
+
+Conversation History:
+{history}
+
+Current Question:
+{question}
+
+Provide one evidence-based answer.
 """
     )
 
-    document_chain = create_stuff_documents_chain(
-        llm,
-        prompt
-    )
+    chain = prompt | llm
 
-    retrieval_chain = create_retrieval_chain(
-        retriever,
-        document_chain
-    )
+    response = chain.invoke({
 
-    return retrieval_chain
+        "context": retrieved_context,
 
+        "image_context": image_context,
 
-if __name__ == "__main__":
-    create_vector_db()
+        "history": history,
+
+        "question": question
+
+    })
+
+    add_to_history("user", question)
+    add_to_history("assistant", response.content)
+    return response.content
+
+def add_to_history(role, message):
+    st.session_state.chat_history.append({
+        "role": role,
+        "content": message
+    })
+def get_history():
+
+    history = ""
+
+    for chat in st.session_state.chat_history:
+
+        history += f"{chat['role'].capitalize()}: {chat['content']}\n"
+
+    return history
+
+def clear_history():
+    st.session_state.chat_history = []

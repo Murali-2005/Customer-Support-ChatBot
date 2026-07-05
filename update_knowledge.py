@@ -3,7 +3,7 @@ import shutil
 
 from langchain_community.document_loaders import CSVLoader
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 VECTOR_DB_PATH = "faiss_index"
 UPDATES_FOLDER = "updates"
@@ -50,10 +50,11 @@ def update_vector_db():
 
         total += len(docs)
 
-        shutil.move(
-            path,
-            os.path.join(PROCESSED_FOLDER, file)
-        )
+        dest_path = os.path.join(PROCESSED_FOLDER, file)
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+
+        shutil.move(path, dest_path)
 
     vectordb.save_local(VECTOR_DB_PATH)
 
